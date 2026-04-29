@@ -10,6 +10,7 @@ Monorepo del MVP de calendarios con:
 
 - Liquibase configurado y primera migracion del esquema MVP aplicada en Supabase.
 - CRUD de `Senior` implementado en backend y frontend.
+- Capa de autenticacion: `/api/auth/login` (JWT) y endpoints protegidos.
 - Backend preparado para funcionar:
   - en local con `database/liquibase.properties`
   - en Render con `DATABASE_URL`
@@ -23,6 +24,8 @@ Usa [backend/.env.example](/abs/path/c:/Users/garci/Desktop/my_lab/backend/.env.
 
 - `DATABASE_URL`: cadena de conexion PostgreSQL de Supabase
 - `ALLOWED_ORIGINS`: lista separada por comas con los orígenes del frontend
+- `JWT_SECRET`: secreto para firmar tokens JWT (HS256)
+- `JWT_EXPIRES_MINUTES`: minutos de validez del token
 
 ### Frontend
 
@@ -99,3 +102,17 @@ Para este repo, el proyecto de Vercel debe apuntar a `frontend/`.
    - Render: `DATABASE_URL`, `ALLOWED_ORIGINS`
    - Vercel: `VITE_API_BASE_URL`
 5. Cada commit a `main` disparara nuevos despliegues en ambos servicios.
+
+## Pruebas API (Postman)
+
+El repo incluye una coleccion Postman para probar la API por ciclo feliz minimo (C, R, U, D) y una GitHub Action que la ejecuta.
+
+- Coleccion: `postman/SECOT.postman_collection.json`
+- Entorno (produccion): `postman/SECOT-Prod.postman_environment.json`
+- Action: `.github/workflows/postman-api-tests.yml`
+
+Para que la Action funcione, crea estos secrets en GitHub:
+
+- `POSTMAN_BASE_URL`: URL publica del backend (por ejemplo, la de Render)
+- `POSTMAN_USERNAME`: usuario para `/api/auth/login`
+- `POSTMAN_PASSWORD`: password para `/api/auth/login`

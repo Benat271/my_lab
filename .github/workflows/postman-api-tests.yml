@@ -1,0 +1,46 @@
+name: Postman API Tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  postman:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Newman
+        run: npm install -g newman
+
+      - name: Run Postman collections
+        env:
+          BASE_URL: ${{ secrets.POSTMAN_BASE_URL }}
+          USERNAME: ${{ secrets.POSTMAN_USERNAME }}
+          PASSWORD: ${{ secrets.POSTMAN_PASSWORD }}
+        run: |
+          if [ -z "${BASE_URL}" ]; then
+            echo "Missing secret POSTMAN_BASE_URL (e.g. https://your-service.onrender.com)" >&2
+            exit 2
+          fi
+          if [ -z "${USERNAME}" ] || [ -z "${PASSWORD}" ]; then
+            echo "Missing secrets POSTMAN_USERNAME / POSTMAN_PASSWORD" >&2
+            exit 2
+          fi
+
+          # Override baseUrl from secrets to avoid editing the exported environment file.
+          newman run postman/SECOT.postman_collection.json \
+            --env-var baseUrl="${BASE_URL}" \
+            --env-var username="${USERNAME}" \
+            --env-var password="${PASSWORD}" \
+            --reporters cli,json \
+            --reporter-json-export newman-report.json
+
+      - name: Post summary
+        run: node scripts/postman-summary.mjs newman-report.json

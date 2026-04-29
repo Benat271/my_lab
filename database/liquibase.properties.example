@@ -1,0 +1,13 @@
+changeLogFile=database/changelog-root.xml
+
+# Copia este archivo a liquibase.local.properties y completa los valores reales.
+url=jdbc:postgresql://aws-0-eu-west-1.pooler.supabase.com:5432/postgres?user=postgres.wcgttahzujvitchxjjjl&password=CHANGE_ME&sslmode=require
+username=postgres
+password=CHANGE_ME
+driver=org.postgresql.Driver
+
+# Driver JDBC local incluido en el proyecto.
+classpath=database/drivers/postgresql-42.7.7.jar
+
+# Opcional: fija el esquema por defecto del proyecto.
+defaultSchemaName=public
