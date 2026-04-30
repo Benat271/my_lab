@@ -43,4 +43,10 @@ jobs:
             --reporter-json-export newman-report.json
 
       - name: Post summary
-        run: node scripts/postman-summary.mjs newman-report.json
+        run: node scripts/postman-summary.mjs newman-report.json postman-report
+
+      - name: Upload detailed Postman report
+        uses: actions/upload-artifact@v4
+        with:
+          name: postman-report
+          path: postman-report/
