@@ -23,6 +23,7 @@ from psycopg.rows import dict_row
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 LIQUIBASE_PROPERTIES = BASE_DIR / "database" / "liquibase.properties"
+LIQUIBASE_LOCAL_PROPERTIES = BASE_DIR / "database" / "liquibase.local.properties"
 
 
 def _strip_quotes(value: str) -> str:
@@ -36,12 +37,12 @@ def _split_origins(origins: str | None) -> list[str]:
     return parsed or ["*"]
 
 
-def load_database_settings() -> dict[str, str]:
+def load_database_settings(properties_path: Path) -> dict[str, str]:
     settings: dict[str, str] = {}
-    if not LIQUIBASE_PROPERTIES.exists():
+    if not properties_path.exists():
         return settings
 
-    for raw_line in LIQUIBASE_PROPERTIES.read_text(encoding="utf-8").splitlines():
+    for raw_line in properties_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
@@ -55,7 +56,9 @@ def build_connection_kwargs() -> dict[str, Any]:
     if database_url:
         return {"conninfo": database_url, "row_factory": dict_row}
 
-    settings = load_database_settings()
+    # Prefer local (developer) properties if present.
+    properties_path = LIQUIBASE_LOCAL_PROPERTIES if LIQUIBASE_LOCAL_PROPERTIES.exists() else LIQUIBASE_PROPERTIES
+    settings = load_database_settings(properties_path)
     jdbc_url = settings.get("url", "")
     if not jdbc_url.startswith("jdbc:postgresql://"):
         raise RuntimeError(
