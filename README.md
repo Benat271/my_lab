@@ -116,3 +116,18 @@ Para que la Action funcione, crea estos secrets en GitHub:
 - `POSTMAN_BASE_URL`: URL publica del backend (por ejemplo, la de Render)
 - `POSTMAN_USERNAME`: usuario para `/api/auth/login`
 - `POSTMAN_PASSWORD`: password para `/api/auth/login`
+
+## Pruebas unitarias backend
+
+El repo incluye pruebas unitarias del backend con `pytest` en `backend/tests/`.
+
+- Workflow: `.github/workflows/backend-unit-tests.yml`
+- Informe detallado: artefacto `pytest-report` en cada ejecucion
+
+Ejecucion local:
+
+```powershell
+cd C:\Users\garci\Desktop\my_lab
+.\backend\venv\Scripts\python.exe -m pytest backend/tests --json-report --json-report-file=pytest-report.json
+python scripts/pytest-summary.py pytest-report.json pytest-report
+```

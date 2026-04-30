@@ -1,0 +1,43 @@
+name: Backend Unit Tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install backend dependencies
+        run: python -m pip install --upgrade pip && pip install -r backend/requirements.txt
+
+      - name: Run backend unit tests
+        env:
+          PYTHONPATH: .
+          JWT_SECRET: github-actions-unit-test-secret
+        run: |
+          pytest backend/tests \
+            --json-report \
+            --json-report-file=pytest-report.json \
+            --junitxml=pytest-junit.xml
+
+      - name: Generate pytest report
+        if: always()
+        run: python scripts/pytest-summary.py pytest-report.json pytest-report
+
+      - name: Upload pytest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pytest-report
+          path: |
+            pytest-report/
+            pytest-junit.xml
