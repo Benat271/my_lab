@@ -10,7 +10,6 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
-
 from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -152,6 +151,69 @@ class SeniorRead(SeniorBase):
     id: int
     model_config = ConfigDict(from_attributes=True)
 
+class GrupoBase(BaseModel):
+    grupo_codigo: int = Field(gt=0)
+    nombre_grupo: str = Field(min_length=1, max_length=120)
+    descripcion: str | None = Field(default=None, max_length=1000)
+    color_hex: str = Field(pattern="^#[0-9A-Fa-f]{6}$")
+    canal_teams: str | None = Field(default=None, max_length=120)
+    responsable_senior_id: int
+    activo: bool = True
+
+class GrupoCreate(GrupoBase):
+    pass
+
+class GrupoRead(GrupoBase):
+    id: int
+    model_config = ConfigDict(from_attributes=True)
+
+class UserBase(BaseModel):
+    username: str = Field(min_length=1, max_length=80)
+    is_active: bool = True
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def normalize_username(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+class UserCreate(UserBase):
+    password: str = Field(min_length=6, max_length=200)
+
+class UserUpdate(BaseModel):
+    username: str | None = Field(default=None, min_length=1, max_length=80)
+    password: str | None = Field(default=None, min_length=6, max_length=200)
+    is_active: bool | None = None
+
+class UserRead(UserBase):
+    id: int
+    created_at: datetime
+    model_config = ConfigDict(from_attributes=True)
+
+def _generate_password_hash(password: str) -> tuple[str, str]:
+    salt = os.urandom(16)
+    pw_hash = _pbkdf2_hash(password, salt)
+    return base64.b64encode(salt).decode("ascii"), base64.b64encode(pw_hash).decode("ascii")
+
+class GenericDeleteResponse(BaseModel):
+    status: str
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=80)
+    password: str = Field(min_length=1, max_length=200)
+
+    @field_validator("username", mode="before")
+    @classmethod
+    def normalize_username(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
 
 class SeniorDeleteResponse(BaseModel):
     status: str
@@ -246,23 +308,6 @@ def require_user(credentials: HTTPAuthorizationCredentials | None = Depends(bear
     if not isinstance(username, str) or not username:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token invalido.")
     return payload
-
-
-class LoginRequest(BaseModel):
-    username: str = Field(min_length=1, max_length=80)
-    password: str = Field(min_length=1, max_length=200)
-
-    @field_validator("username", mode="before")
-    @classmethod
-    def normalize_username(cls, value: Any) -> Any:
-        if isinstance(value, str):
-            return value.strip()
-        return value
-
-
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
 
 
 app.add_middleware(
@@ -540,3 +585,124 @@ def delete_senior(senior_id: int, _: dict[str, Any] = Depends(require_user)) -> 
         raise _database_error(exc) from exc
 
     return SeniorDeleteResponse(status="deleted")
+
+# --- GRUPOS API ---
+
+@app.get("/api/grupos", response_model=list[GrupoRead])
+def list_grupos(q: str | None = Query(default=None), _: dict = Depends(require_user)):
+    sql = "select id, grupo_codigo, nombre_grupo, descripcion, color_hex, canal_teams, responsable_senior_id, activo from grupo"
+    params = ()
+    if q:
+        sql += " where nombre_grupo ilike %s or descripcion ilike %s"
+        params = (f"%{q}%", f"%{q}%")
+    sql += " order by grupo_codigo asc"
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.fetchall()
+
+@app.post("/api/grupos", response_model=GrupoRead, status_code=status.HTTP_201_CREATED)
+def create_grupo(payload: GrupoCreate, _: dict = Depends(require_user)):
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    insert into grupo (grupo_codigo, nombre_grupo, descripcion, color_hex, canal_teams, responsable_senior_id, activo)
+                    values (%s, %s, %s, %s, %s, %s, %s) returning id, grupo_codigo, nombre_grupo, descripcion, color_hex, canal_teams, responsable_senior_id, activo
+                    """,
+                    (payload.grupo_codigo, payload.nombre_grupo, payload.descripcion, payload.color_hex, payload.canal_teams, payload.responsable_senior_id, payload.activo)
+                )
+                return cur.fetchone()
+    except PsycopgError as exc:
+        raise _database_error(exc)
+
+@app.put("/api/grupos/{grupo_id}", response_model=GrupoRead)
+def update_grupo(grupo_id: int, payload: GrupoCreate, _: dict = Depends(require_user)):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                update grupo set grupo_codigo=%s, nombre_grupo=%s, descripcion=%s, color_hex=%s, canal_teams=%s, responsable_senior_id=%s, activo=%s
+                where id=%s returning id, grupo_codigo, nombre_grupo, descripcion, color_hex, canal_teams, responsable_senior_id, activo
+                """,
+                (payload.grupo_codigo, payload.nombre_grupo, payload.descripcion, payload.color_hex, payload.canal_teams, payload.responsable_senior_id, payload.activo, grupo_id)
+            )
+            res = cur.fetchone()
+            if not res:
+                raise HTTPException(404, "Grupo no encontrado")
+            return res
+
+@app.delete("/api/grupos/{grupo_id}", response_model=GenericDeleteResponse)
+def delete_grupo(grupo_id: int, _: dict = Depends(require_user)):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("delete from grupo where id = %s", (grupo_id,))
+            if cur.rowcount == 0:
+                raise HTTPException(404, "Grupo no encontrado")
+    return GenericDeleteResponse(status="deleted")
+
+# --- USERS API (ADMIN) ---
+
+@app.get("/api/users", response_model=list[UserRead])
+def list_users(_: dict = Depends(require_user)):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("select id, username, is_active, created_at from app_user order by username asc")
+            return cur.fetchall()
+
+@app.post("/api/users", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+def create_user(payload: UserCreate, _: dict = Depends(require_user)):
+    salt, hashed = _generate_password_hash(payload.password)
+    try:
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    insert into app_user (username, password_salt_b64, password_hash_b64, is_active)
+                    values (%s, %s, %s, %s) returning id, username, is_active, created_at
+                    """,
+                    (payload.username, salt, hashed, payload.is_active)
+                )
+                return cur.fetchone()
+    except PsycopgError as exc:
+        raise _database_error(exc)
+
+@app.put("/api/users/{user_id}", response_model=UserRead)
+def update_user(user_id: int, payload: UserUpdate, _: dict = Depends(require_user)):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Construcción dinámica para no machacar password si no viene
+            updates = []
+            params = []
+            if payload.username is not None:
+                updates.append("username = %s")
+                params.append(payload.username)
+            if payload.is_active is not None:
+                updates.append("is_active = %s")
+                params.append(payload.is_active)
+            if payload.password is not None:
+                salt, hashed = _generate_password_hash(payload.password)
+                updates.append("password_salt_b64 = %s, password_hash_b64 = %s")
+                params.extend([salt, hashed])
+            
+            if not updates:
+                cur.execute("select id, username, is_active, created_at from app_user where id = %s", (user_id,))
+            else:
+                sql = f"update app_user set {', '.join(updates)} where id = %s returning id, username, is_active, created_at"
+                params.append(user_id)
+                cur.execute(sql, params)
+            
+            res = cur.fetchone()
+            if not res:
+                raise HTTPException(404, "Usuario no encontrado")
+            return res
+
+@app.delete("/api/users/{user_id}", response_model=GenericDeleteResponse)
+def delete_user(user_id: int, _: dict = Depends(require_user)):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("delete from app_user where id = %s", (user_id,))
+            if cur.rowcount == 0:
+                raise HTTPException(404, "Usuario no encontrado")
+    return GenericDeleteResponse(status="deleted")
